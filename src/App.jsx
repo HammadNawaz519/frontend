@@ -142,10 +142,8 @@ function CommandApp() {
   const runAdvisor = async () => {
     setAdvisorLoading(true);
     try {
-      // Try both prefixes — Vercel dashboard users may add either form
       const apiKey = import.meta.env.OPENROUTER_API_KEY || import.meta.env.VITE_OPENROUTER_API_KEY;
       if (apiKey) {
-        // Run AI completely on the frontend
         const systemPrompt = `You are the Fleet Command AI Advisor.
 Current fleet state:
 - Ships: ${ships.length} (${ships.filter(s => s.status !== 'normal').length} off-nominal)
@@ -157,38 +155,50 @@ Analyze this state and provide exactly 3 strategic, actionable recommendations f
 Output STRICTLY valid JSON like:
 { "recommendations": [ { "title": "...", "description": "...", "priority": "high|medium|low" } ] }`;
 
-        const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${apiKey}`,
-            'HTTP-Referer': window.location.href,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            model: import.meta.env.OPENROUTER_MODEL || 'google/gemini-2.0-flash-exp:free',
-            messages: [{ role: 'user', content: systemPrompt }]
-          })
-        });
+        // Model fallback chain — tries each in order until one succeeds
+        const MODELS = [
+          import.meta.env.OPENROUTER_MODEL || 'google/gemini-2.0-flash-exp:free',
+          'meta-llama/llama-3.1-8b-instruct:free',
+          'mistralai/mistral-7b-instruct:free',
+        ];
 
-        if (!res.ok) throw new Error('Frontend AI request failed');
-        const json = await res.json();
-        const text = json.choices[0].message.content;
-        const m = text.match(/\{[\s\S]*\}/);
-        if (m) {
-          setAdvisorData(JSON.parse(m[0]));
-        } else {
-          throw new Error('Failed to parse AI response');
+        let lastErr = null;
+        for (const model of MODELS) {
+          try {
+            const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${apiKey}`,
+                'HTTP-Referer': window.location.href,
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({ model, messages: [{ role: 'user', content: systemPrompt }] }),
+            });
+
+            if (!res.ok) { lastErr = `${model} returned ${res.status}`; continue; }
+            const json = await res.json();
+            const text = json.choices?.[0]?.message?.content || '';
+            const m = text.match(/\{[\s\S]*\}/);
+            if (!m) { lastErr = `${model} gave unparseable response`; continue; }
+            setAdvisorData(JSON.parse(m[0]));
+            setAdvisorLoading(false);
+            return; // success — exit
+          } catch (e) { lastErr = e.message; }
         }
+        // All models failed
+        throw new Error(lastErr || 'All models unavailable');
       } else {
-        // Fallback to backend AI
+        // No API key — fall back to backend
         const BACKEND = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? 'http://localhost:8000' : '');
-        const r = await fetch(`${BACKEND}/api/advisor`, { method: 'POST',
-          headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}) });
+        const r = await fetch(`${BACKEND}/api/advisor`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}),
+        });
         if (!r.ok) throw new Error();
-        const data = await r.json();
-        setAdvisorData(data);
+        setAdvisorData(await r.json());
       }
-    } catch { setAdvisorData({ error: 'Advisor unavailable — check OPENROUTER_API_KEY or backend connection' }); }
+    } catch (e) {
+      setAdvisorData({ error: `Advisor unavailable — ${e.message || 'check OPENROUTER_API_KEY'}` });
+    }
     setAdvisorLoading(false);
   };
 
