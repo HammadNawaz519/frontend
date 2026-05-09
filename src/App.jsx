@@ -142,7 +142,8 @@ function CommandApp() {
   const runAdvisor = async () => {
     setAdvisorLoading(true);
     try {
-      const apiKey = import.meta.env.OPENROUTER_API_KEY;
+      // Try both prefixes — Vercel dashboard users may add either form
+      const apiKey = import.meta.env.OPENROUTER_API_KEY || import.meta.env.VITE_OPENROUTER_API_KEY;
       if (apiKey) {
         // Run AI completely on the frontend
         const systemPrompt = `You are the Fleet Command AI Advisor.
