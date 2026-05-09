@@ -128,6 +128,8 @@ function ConnPill({ connected }) {
 
 // ── Command Interface ─────────────────────────────────────────────────────────
 function CommandApp() {
+  const ships            = useStore(s => s.ships);
+  const weatherZones     = useStore(s => s.weatherZones);
   const selectedShipId   = useStore(s => s.selectedShipId);
   const setSelectedShipId = useStore(s => s.setSelectedShipId);
   const alerts           = useStore(s => s.alerts);
@@ -144,16 +146,55 @@ function CommandApp() {
   const [rightTab, setRightTab] = useState('ship'); // 'ship' | 'zones' | 'weather' | 'advisor'
   const [advisorData, setAdvisorData] = useState(null);
   const [advisorLoading, setAdvisorLoading] = useState(false);
-  const BACKEND = import.meta.env.DEV ? 'http://localhost:8000' : '';
-
   const runAdvisor = async () => {
     setAdvisorLoading(true);
     try {
-      const r = await fetch(`${BACKEND}/api/advisor`, { method: 'POST',
-        headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}) });
-      const data = await r.json();
-      setAdvisorData(data);
-    } catch { setAdvisorData({ error: 'Advisor unavailable — check OPENROUTER_API_KEY' }); }
+      const apiKey = import.meta.env.VITE_OPENROUTER_API_KEY;
+      if (apiKey) {
+        // Run AI completely on the frontend
+        const systemPrompt = `You are the Fleet Command AI Advisor.
+Current fleet state:
+- Ships: ${ships.length} (${ships.filter(s => s.status !== 'normal').length} off-nominal)
+- Active Alerts: ${alerts.filter(a => !a.acknowledged).length} unacknowledged
+- Weather Zones: ${weatherZones.length} active storms
+- Restricted Zones: ${zones.length}
+
+Analyze this state and provide exactly 3 strategic, actionable recommendations for the Fleet Commander. Focus on routing efficiency, fuel conservation, and distress response.
+Output STRICTLY valid JSON like:
+{ "recommendations": [ { "title": "...", "description": "...", "priority": "high|medium|low" } ] }`;
+
+        const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${apiKey}`,
+            'HTTP-Referer': window.location.href,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            model: import.meta.env.VITE_OPENROUTER_MODEL || 'google/gemini-2.0-flash-exp:free',
+            messages: [{ role: 'user', content: systemPrompt }]
+          })
+        });
+
+        if (!res.ok) throw new Error('Frontend AI request failed');
+        const json = await res.json();
+        const text = json.choices[0].message.content;
+        const m = text.match(/\{[\s\S]*\}/);
+        if (m) {
+          setAdvisorData(JSON.parse(m[0]));
+        } else {
+          throw new Error('Failed to parse AI response');
+        }
+      } else {
+        // Fallback to backend AI
+        const BACKEND = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? 'http://localhost:8000' : '');
+        const r = await fetch(`${BACKEND}/api/advisor`, { method: 'POST',
+          headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}) });
+        if (!r.ok) throw new Error();
+        const data = await r.json();
+        setAdvisorData(data);
+      }
+    } catch { setAdvisorData({ error: 'Advisor unavailable — check VITE_OPENROUTER_API_KEY or backend connection' }); }
     setAdvisorLoading(false);
   };
 
