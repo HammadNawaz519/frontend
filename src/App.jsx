@@ -160,7 +160,9 @@ Output STRICTLY valid JSON like:
           import.meta.env.OPENROUTER_MODEL || 'google/gemini-2.0-flash-exp:free',
           'deepseek/deepseek-chat:free',
           'qwen/qwen-2.5-72b-instruct:free',
+          'google/gemini-2.5-pro-exp-03-25:free',
           'meta-llama/llama-3.2-3b-instruct:free',
+          'microsoft/phi-3-mini-128k-instruct:free',
         ];
 
         let lastErr = null;
@@ -171,11 +173,17 @@ Output STRICTLY valid JSON like:
               headers: {
                 'Authorization': `Bearer ${apiKey}`,
                 'HTTP-Referer': window.location.href,
+                'X-Title': 'Maritime Command System',
                 'Content-Type': 'application/json',
               },
               body: JSON.stringify({ model, messages: [{ role: 'user', content: systemPrompt }] }),
             });
 
+            if (res.status === 429) {
+              lastErr = `${model} rate limited`;
+              await new Promise(r => setTimeout(r, 1200)); // wait before next model
+              continue;
+            }
             if (!res.ok) { lastErr = `${model} returned ${res.status}`; continue; }
             const json = await res.json();
             const text = json.choices?.[0]?.message?.content || '';
@@ -186,7 +194,6 @@ Output STRICTLY valid JSON like:
             return; // success — exit
           } catch (e) { lastErr = e.message; }
         }
-        // All models failed
         throw new Error(lastErr || 'All models unavailable');
       } else {
         // No API key — fall back to backend
