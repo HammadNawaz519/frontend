@@ -176,63 +176,56 @@ export default function MapBox({ isCommand }) {
   const popupHtml = useCallback((ship) => {
     const st = getStatus(ship.status);
     const fuelPct = Math.min(100, ((ship.fuel || 0) / 8500) * 100);
-    const fuelColor = fuelPct > 50 ? '#2e7d6e' : fuelPct > 20 ? '#c07c2b' : '#c0392b';
-    const fuelBar = `<div style="height:5px;background:#e8f0f5;border-radius:3px;margin-top:4px"><div style="height:100%;width:${fuelPct}%;background:${fuelColor};border-radius:3px;transition:width 0.3s"></div></div>`;
+    const fuelColor = fuelPct > 50 ? '#2e7d6e' : fuelPct > 20 ? '#e67e22' : '#c0392b';
     const eta = ship.eta_seconds ? (() => {
       const h = Math.floor(ship.eta_seconds / 3600);
       const m = Math.floor((ship.eta_seconds % 3600) / 60);
       return h > 0 ? `${h}h ${m}m` : `${m}m`;
     })() : '—';
-    const lat = ship.lat?.toFixed(4) ?? '—';
-    const lng = ship.lng?.toFixed(4) ?? '—';
-    const waypoints = ship.route_path ? ship.route_path.length : 0;
-    const distKm = ship.dist_to_dest_km ?? '—';
-    return `<div style="font-family:'Sora',sans-serif;min-width:220px;color:#1a2b38;padding:2px">
-      <div style="font-weight:800;font-size:15px;margin-bottom:1px;letter-spacing:-0.01em">${ship.name} <span style="font-size:10px;color:#6fa3c0;font-weight:600">${ship.id}</span></div>
-      <div style="font-size:10px;color:#6fa3c0;margin-bottom:10px;text-transform:uppercase;letter-spacing:0.12em">${ship.type || 'Cargo'} · ${ship.flag || '—'}</div>
-
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:5px;margin-bottom:8px">
-        <div style="background:#eef6fb;border-radius:8px;padding:7px 9px;border:1px solid #cce3ef">
-          <div style="font-size:9px;color:#6fa3c0;text-transform:uppercase;font-weight:700;margin-bottom:2px">Speed</div>
-          <div style="font-size:14px;font-weight:700;font-family:monospace;color:#1a2b38">${ship.speed || 0} kn</div>
+    const distKm = ship.dist_to_dest_km != null ? `${Number(ship.dist_to_dest_km).toFixed(0)} km` : '—';
+    const speedKn = ship.speed?.toFixed(1) ?? '0';
+    const fuelT = ship.fuel?.toFixed(0) ?? '0';
+    return `
+    <div style="font-family:system-ui,sans-serif;width:260px;background:#fff;overflow:hidden">
+      <!-- Header strip -->
+      <div style="background:${st.color};padding:10px 14px 8px;">
+        <div style="display:flex;align-items:center;justify-content:space-between">
+          <div>
+            <div style="font-size:15px;font-weight:800;color:#fff;letter-spacing:-0.02em">${ship.name}</div>
+            <div style="font-size:10px;color:rgba(255,255,255,0.75);font-weight:600;letter-spacing:0.1em;text-transform:uppercase">${ship.id} · ${ship.type || 'Cargo'}</div>
+          </div>
+          <span style="font-size:10px;font-weight:700;padding:3px 9px;border-radius:999px;background:rgba(255,255,255,0.22);color:#fff;white-space:nowrap">${st.label}</span>
         </div>
-        <div style="background:#eef6fb;border-radius:8px;padding:7px 9px;border:1px solid #cce3ef">
-          <div style="font-size:9px;color:#6fa3c0;text-transform:uppercase;font-weight:700;margin-bottom:2px">Heading</div>
-          <div style="font-size:14px;font-weight:700;font-family:monospace;color:#1a2b38">${Math.round(ship.heading || 0)}°</div>
-        </div>
-        <div style="background:#eef6fb;border-radius:8px;padding:7px 9px;border:1px solid #cce3ef">
-          <div style="font-size:9px;color:#6fa3c0;text-transform:uppercase;font-weight:700;margin-bottom:2px">Fuel</div>
-          <div style="font-size:14px;font-weight:700;font-family:monospace;color:${fuelColor}">${ship.fuel?.toFixed(0) || 0}t</div>
-          ${fuelBar}
-        </div>
-        <div style="background:#eef6fb;border-radius:8px;padding:7px 9px;border:1px solid #cce3ef">
-          <div style="font-size:9px;color:#6fa3c0;text-transform:uppercase;font-weight:700;margin-bottom:2px">ETA</div>
-          <div style="font-size:14px;font-weight:700;font-family:monospace;color:#1a2b38">${eta}</div>
+        <!-- Fuel bar -->
+        <div style="margin-top:8px">
+          <div style="display:flex;justify-content:space-between;font-size:9px;color:rgba(255,255,255,0.75);margin-bottom:3px">
+            <span>FUEL</span><span>${fuelT}t · ${fuelPct.toFixed(0)}%</span>
+          </div>
+          <div style="height:4px;background:rgba(255,255,255,0.25);border-radius:2px">
+            <div style="height:100%;width:${fuelPct}%;background:rgba(255,255,255,0.9);border-radius:2px;transition:width 0.4s"></div>
+          </div>
         </div>
       </div>
 
-      <div style="background:#f0f8ff;border-radius:8px;padding:7px 10px;border:1px solid #cce3ef;margin-bottom:7px">
-        <div style="font-size:9px;color:#6fa3c0;text-transform:uppercase;font-weight:700;margin-bottom:4px;letter-spacing:0.12em">📍 Position</div>
-        <div style="display:flex;gap:10px;font-family:monospace;font-size:12px;font-weight:600;color:#1a2b38">
-          <span>Lat: ${lat}°</span>
-          <span>Lng: ${lng}°</span>
-        </div>
+      <!-- Stats row -->
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:1px;background:#e8f0f5">
+        ${[['⚡ Speed', speedKn + ' kn'], ['🧭 ETA', eta], ['📍 Dist', distKm]].map(([label, val]) =>
+          `<div style="background:#fff;padding:7px 8px;text-align:center">
+            <div style="font-size:9px;color:#8ba8bc;font-weight:700;text-transform:uppercase;margin-bottom:2px">${label}</div>
+            <div style="font-size:12px;font-weight:800;color:#1a2b38">${val}</div>
+          </div>`).join('')}
       </div>
 
-      <div style="background:#f0f8ff;border-radius:8px;padding:7px 10px;border:1px solid #cce3ef;margin-bottom:8px">
-        <div style="font-size:9px;color:#6fa3c0;text-transform:uppercase;font-weight:700;margin-bottom:4px;letter-spacing:0.12em">🧭 Route</div>
-        <div style="font-size:12px;color:#1a2b38;font-weight:600">→ <strong>${ship.destination_port}</strong></div>
-        <div style="display:flex;gap:10px;margin-top:3px;font-size:11px;color:#6fa3c0">
-          <span>${distKm} km remaining</span>
-          <span>${waypoints} waypoints ahead</span>
-        </div>
+      <!-- Destination row -->
+      <div style="padding:8px 14px;border-top:1px solid #eef3f7;display:flex;align-items:center;justify-content:space-between">
+        <span style="font-size:11px;color:#8ba8bc;font-weight:600">→ TO</span>
+        <span style="font-size:12px;font-weight:800;color:#1a2b38">${ship.destination_port || '—'}</span>
       </div>
 
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:5px">
-        <span style="font-size:11px;color:#5f6b77">Cargo: <strong>${ship.cargo || '—'}</strong></span>
-        <span style="font-size:10px;font-weight:700;padding:2px 10px;border-radius:999px;background:${st.color}22;color:${st.color};border:1px solid ${st.color}44">${st.label}</span>
-      </div>
-      ${!ship.can_reach_dest ? `<div style="margin-top:6px;padding:6px 9px;background:#fef0f0;border:1px solid #c0392b44;border-radius:7px;font-size:11px;color:#c0392b;font-weight:600">⚠ Insufficient fuel to reach ${ship.destination_port}</div>` : ''}
+      ${!ship.can_reach_dest ? `
+      <div style="padding:6px 14px 8px;background:#fef6f6;border-top:1px solid #fccaca">
+        <span style="font-size:11px;color:#c0392b;font-weight:700">⚠ Insufficient fuel to reach ${ship.destination_port}</span>
+      </div>` : ''}
     </div>`;
   }, []);
 
@@ -520,12 +513,20 @@ export default function MapBox({ isCommand }) {
       if (!ref) {
         // ── First time: spawn marker exactly at server position ───────────────
         const el = makeShipEl(st.color, isSelected, ship.status);
+
+        // No fixed anchor — Mapbox auto-picks best direction to stay on screen
         const popup = new mapboxgl.Popup({
-          anchor: 'bottom',
-          offset: [0, -48],
+          offset: { 'bottom': [0, -50], 'bottom-left': [6, -50], 'bottom-right': [-6, -50],
+                    'top': [0, 10], 'top-left': [6, 10], 'top-right': [-6, 10],
+                    'left': [10, 0], 'right': [-10, 0] },
           closeButton: true, closeOnClick: false,
-          className: 'ship-popup', maxWidth: '290px',
+          className: 'ship-popup', maxWidth: '260px',
         }).setHTML(popupHtml(ship));
+
+        // Spawn ship at first water waypoint if available, else server position
+        const firstWp = ship.route_path?.[0];
+        const spawnLng = firstWp ? firstWp[1] : ship.lng;
+        const spawnLat = firstWp ? firstWp[0] : ship.lat;
 
         let pinned = false;
         el.addEventListener('mouseenter', () => {
@@ -548,14 +549,14 @@ export default function MapBox({ isCommand }) {
         });
 
         const marker = new mapboxgl.Marker({ element: el, rotationAlignment: 'map', pitchAlignment: 'map', anchor: 'center' })
-          .setLngLat([ship.lng, ship.lat])
+          .setLngLat([spawnLng, spawnLat])
           .setRotation(ship.heading || 0)
           .addTo(map.current);
 
         ships$.current[ship.id] = {
           marker, popup, el,
-          curLng: ship.lng, curLat: ship.lat, curHdg: ship.heading || 0,
-          pathQueue: buildQueue(ship.lng, ship.lat),
+          curLng: spawnLng, curLat: spawnLat, curHdg: ship.heading || 0,
+          pathQueue: buildQueue(spawnLng, spawnLat),
           speed: ship.speed || 0,
           _pinned: false, _lastShip: ship,
         };
