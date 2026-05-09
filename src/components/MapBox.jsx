@@ -9,12 +9,13 @@ mapboxgl.accessToken = import.meta.env.VITE_MAPBOX_TOKEN || '';
 if (!mapboxgl.accessToken) console.error('[MapBox] VITE_MAPBOX_TOKEN is not set — map will not load.');
 
 // ── Constants ─────────────────────────────────────────────────────────────────
-// 1 degree latitude ≈ 111.32 km. Max ship speed ~30 knots = 55.56 km/h = 0.01543 km/s
-// Converted to degrees/sec for the speed cap: 0.01543 / 111.32 ≈ 0.0001386 °/s
 const KM_PER_DEG = 111.32;
-const MAX_KNOTS = 35;                               // absolute physical ceiling
-const MAX_KM_S = (MAX_KNOTS * 1.852) / 3600;      // km per second
-const MAX_DEG_S = MAX_KM_S / KM_PER_DEG;           // degrees per second (lat)
+const MAX_KNOTS = 35;
+const MAX_KM_S = (MAX_KNOTS * 1.852) / 3600;
+const MAX_DEG_S = MAX_KM_S / KM_PER_DEG;
+
+// How many degrees apart two coords must be to count as "reached"
+const WAYPOINT_REACH_DEG = 0.003;  // ~330 m — tight enough to stay on-path
 
 // ── Status → color ────────────────────────────────────────────────────────────
 const STATUS = {
@@ -77,10 +78,10 @@ export default function MapBox({ isCommand }) {
 
   // Per-ship interpolation state lives entirely outside React state.
   // Shape: { [shipId]: { marker, popup, el,
-  //   curLng, curLat, curHdg,   ← what's visually on screen right now
-  //   tgtLng, tgtLat, tgtHdg,  ← server-authoritative target
-  //   speed,                    ← knots (from server) for max-speed cap
-  //   lastMs } }               ← performance.now() when target was last set
+  //   curLng, curLat, curHdg,   ← currently rendered position
+  //   pathQueue,                ← [[lng,lat],...] waypoints yet to visit (Mapbox order)
+  //   speed,                    ← knots from server
+  //   _pinned, _lastShip } }
   const ships$ = useRef({});
 
   const ships = useStore(s => s.ships);
@@ -413,43 +414,49 @@ export default function MapBox({ isCommand }) {
   }, [routeOptions, previewRouteId]);
 
   // ── Absorb server ticks into ships$ interpolation state ────────────────────
-  // This effect ONLY updates the target position; the RAF loop does all movement.
   useEffect(() => {
     if (!map.current) return;
-
-    const now = performance.now();
 
     ships.forEach(ship => {
       const st = getStatus(ship.status);
       const isSelected = ship.id === selectedShipId;
       const ref = ships$.current[ship.id];
 
+      // Build a path queue from route_path: [[lat,lng],...] → [[lng,lat],...]
+      // Drop waypoints that are already behind the ship (within reach threshold)
+      const buildQueue = (curLng, curLat) => {
+        if (!ship.route_path || ship.route_path.length === 0) return [[ship.lng, ship.lat]];
+        const all = ship.route_path.map(([la, ln]) => [ln, la]);
+        // find first waypoint we haven't reached yet
+        let start = 0;
+        while (start < all.length - 1) {
+          const [wLng, wLat] = all[start];
+          if (Math.abs(wLng - curLng) < WAYPOINT_REACH_DEG && Math.abs(wLat - curLat) < WAYPOINT_REACH_DEG) {
+            start++;
+          } else break;
+        }
+        return all.slice(start);
+      };
+
       if (!ref) {
         // ── First time: spawn marker exactly at server position ───────────────
         const el = makeShipEl(st.color, isSelected);
-
         const popup = new mapboxgl.Popup({
           offset: 22, closeButton: true, closeOnClick: false,
           className: 'ship-popup', maxWidth: '280px',
         }).setHTML(popupHtml(ship));
 
         let pinned = false;
-
         el.addEventListener('mouseenter', () => {
-          const curShipRef = ships$.current[ship.id];
-          popup.setHTML(popupHtml((curShipRef && curShipRef._lastShip) || ship));
-          popup.setLngLat([curShipRef ? curShipRef.curLng : ship.lng, curShipRef ? curShipRef.curLat : ship.lat]);
+          const curRef = ships$.current[ship.id];
+          popup.setHTML(popupHtml((curRef && curRef._lastShip) || ship));
+          popup.setLngLat([curRef ? curRef.curLng : ship.lng, curRef ? curRef.curLat : ship.lat]);
           if (!popup.isOpen()) popup.addTo(map.current);
         });
-
-        el.addEventListener('mouseleave', () => {
-          if (!pinned) popup.remove();
-        });
-
+        el.addEventListener('mouseleave', () => { if (!pinned) popup.remove(); });
         el.addEventListener('click', e => {
           e.stopPropagation();
           setSelectedShipId(ship.id);
-          // un-pin all others
           Object.values(ships$.current).forEach(m => { m._pinned = false; });
           pinned = true;
           ships$.current[ship.id] && (ships$.current[ship.id]._pinned = true);
@@ -459,10 +466,7 @@ export default function MapBox({ isCommand }) {
           popup.addTo(map.current);
         });
 
-        const marker = new mapboxgl.Marker({
-          element: el, rotationAlignment: 'map',
-          pitchAlignment: 'map', anchor: 'center',
-        })
+        const marker = new mapboxgl.Marker({ element: el, rotationAlignment: 'map', pitchAlignment: 'map', anchor: 'center' })
           .setLngLat([ship.lng, ship.lat])
           .setRotation(ship.heading || 0)
           .addTo(map.current);
@@ -470,23 +474,16 @@ export default function MapBox({ isCommand }) {
         ships$.current[ship.id] = {
           marker, popup, el,
           curLng: ship.lng, curLat: ship.lat, curHdg: ship.heading || 0,
-          tgtLng: ship.lng, tgtLat: ship.lat, tgtHdg: ship.heading || 0,
+          pathQueue: buildQueue(ship.lng, ship.lat),
           speed: ship.speed || 0,
-          lastMs: now,
-          _pinned: false,
-          _lastShip: ship,
+          _pinned: false, _lastShip: ship,
         };
-
       } else {
-        // ── Subsequent tick: update target, keep cur as-is (RAF interpolates) ─
-        ref.tgtLng = ship.lng;
-        ref.tgtLat = ship.lat;
-        ref.tgtHdg = ship.heading || 0;
+        // ── Subsequent tick: refresh waypoint queue ──────────────────────────
+        ref.pathQueue = buildQueue(ref.curLng, ref.curLat);
         ref.speed = ship.speed || 0;
-        ref.lastMs = now;
         ref._lastShip = ship;
 
-        // Visual updates
         const svg = ref.el.querySelector('polygon');
         if (svg) svg.setAttribute('fill', st.color);
         const circles = ref.el.querySelectorAll('circle');
@@ -495,7 +492,6 @@ export default function MapBox({ isCommand }) {
         ref.el.style.filter = isSelected
           ? 'drop-shadow(0 0 8px rgba(129,166,198,0.9))'
           : 'drop-shadow(0 2px 4px rgba(0,0,0,0.35))';
-
         if (ref.popup.isOpen()) ref.popup.setHTML(popupHtml(ship));
       }
     });
@@ -511,40 +507,58 @@ export default function MapBox({ isCommand }) {
     });
   }, [ships, selectedShipId, popupHtml, setSelectedShipId]);
 
-  // ── RAF loop: smooth interpolation at 60 fps ────────────────────────────────
+  // ── RAF loop: path-following movement at 60 fps ─────────────────────────────
+  // Ships move along their route_path waypoints so they NEVER cut across land.
   useEffect(() => {
     let prevMs = performance.now();
 
     function frame(nowMs) {
-      const dtSec = Math.min((nowMs - prevMs) / 1000, 0.1); // cap at 100 ms to survive tab-hide
+      const dtSec = Math.min((nowMs - prevMs) / 1000, 0.1);
       prevMs = nowMs;
 
       Object.values(ships$.current).forEach(ref => {
-        // ── latitude / longitude ─────────────────────────────────────────────
-        const dLat = ref.tgtLat - ref.curLat;
-        const dLng = ref.tgtLng - ref.curLng;
+        if (!ref.pathQueue || ref.pathQueue.length === 0) return;
 
-        // Max degrees the ship can physically travel this frame
+        // Distance (in degrees) the ship can travel this frame
         const maxDelta = MAX_DEG_S * dtSec;
+        let budget = maxDelta;
 
-        // Step size: lerp coefficient = 8 gives ~95 % convergence in 0.375 s
-        // but never exceed what the ship speed allows
-        const stepLat = Math.max(-maxDelta, Math.min(maxDelta, dLat * 8 * dtSec));
-        const stepLng = Math.max(-maxDelta, Math.min(maxDelta, dLng * 8 * dtSec));
+        // Walk along waypoints, consuming budget
+        while (budget > 0 && ref.pathQueue.length > 0) {
+          const [wLng, wLat] = ref.pathQueue[0];
+          const dLng = wLng - ref.curLng;
+          const dLat = wLat - ref.curLat;
+          const dist = Math.sqrt(dLng * dLng + dLat * dLat);
 
-        // If already very close, snap to avoid floating-point drift
-        ref.curLat = Math.abs(dLat) < 1e-7 ? ref.tgtLat : ref.curLat + stepLat;
-        ref.curLng = Math.abs(dLng) < 1e-7 ? ref.tgtLng : ref.curLng + stepLng;
+          if (dist <= budget) {
+            // Reach this waypoint exactly and pop it
+            ref.curLng = wLng;
+            ref.curLat = wLat;
+            budget -= dist;
+            ref.pathQueue.shift();
+          } else {
+            // Move as far as budget allows toward this waypoint
+            const ratio = budget / dist;
+            ref.curLng += dLng * ratio;
+            ref.curLat += dLat * ratio;
+            budget = 0;
+          }
+        }
 
-        // ── heading ──────────────────────────────────────────────────────────
-        const dHdg = shortAngleDiff(ref.curHdg, ref.tgtHdg);
-        const stepHdg = dHdg * 5 * dtSec;           // 5 rad/s-equivalent convergence
-        ref.curHdg = Math.abs(dHdg) < 0.1 ? ref.tgtHdg : ref.curHdg + stepHdg;
+        // ── heading: point toward next waypoint ─────────────────────────────
+        if (ref.pathQueue.length > 0) {
+          const [wLng, wLat] = ref.pathQueue[0];
+          const dLng = wLng - ref.curLng;
+          const dLat = wLat - ref.curLat;
+          if (Math.abs(dLng) > 1e-6 || Math.abs(dLat) > 1e-6) {
+            const targetHdg = (Math.atan2(dLng, dLat) * 180 / Math.PI + 360) % 360;
+            const dHdg = shortAngleDiff(ref.curHdg, targetHdg);
+            ref.curHdg = Math.abs(dHdg) < 0.2 ? targetHdg : ref.curHdg + dHdg * 6 * dtSec;
+          }
+        }
 
         ref.marker.setLngLat([ref.curLng, ref.curLat]).setRotation(ref.curHdg);
-        if (ref.popup && ref.popup.isOpen()) {
-          ref.popup.setLngLat([ref.curLng, ref.curLat]);
-        }
+        if (ref.popup && ref.popup.isOpen()) ref.popup.setLngLat([ref.curLng, ref.curLat]);
       });
 
       rafRef.current = requestAnimationFrame(frame);
@@ -552,7 +566,7 @@ export default function MapBox({ isCommand }) {
 
     rafRef.current = requestAnimationFrame(frame);
     return () => { if (rafRef.current) cancelAnimationFrame(rafRef.current); };
-  }, []); // stable — reads ships$.current live
+  }, []);
 
   return (
     <>
