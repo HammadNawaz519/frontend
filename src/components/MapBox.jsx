@@ -37,33 +37,112 @@ function shortAngleDiff(from, to) {
   return d;
 }
 
-// Clamp delta-degrees so it never implies speed > MAX_DEG_S * dtSec
-function clampDeg(delta, dtSec) {
-  const maxDelta = MAX_DEG_S * dtSec;
-  return Math.max(-maxDelta, Math.min(maxDelta, delta));
+// Inject ship animation CSS once
+if (typeof document !== 'undefined' && !document.getElementById('ship-anim-css')) {
+  const s = document.createElement('style');
+  s.id = 'ship-anim-css';
+  s.textContent = `
+    @keyframes ship-pulse {
+      0%   { transform: scale(1);   opacity: 0.55; }
+      50%  { transform: scale(1.7); opacity: 0.15; }
+      100% { transform: scale(1);   opacity: 0.55; }
+    }
+    @keyframes ship-ping {
+      0%   { transform: scale(0.8); opacity: 0.7; }
+      100% { transform: scale(2.4); opacity: 0;   }
+    }
+    @keyframes ship-wake {
+      0%   { opacity: 0.45; transform: scaleX(1);   }
+      100% { opacity: 0;    transform: scaleX(2.2); }
+    }
+    .ship-marker:hover .ship-inner { filter: brightness(1.25); }
+    .ship-marker { transition: transform 0.15s ease; }
+    .ship-marker:hover { transform: scale(1.12); }
+    /* Popup fade-in */
+    .mapboxgl-popup { animation: popup-fadein 0.18s ease; }
+    @keyframes popup-fadein {
+      from { opacity: 0; transform: translateY(6px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    .mapboxgl-popup-content {
+      border-radius: 14px !important;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.22), 0 2px 8px rgba(0,0,0,0.12) !important;
+      padding: 0 !important;
+      overflow: hidden;
+      border: 1px solid rgba(129,166,198,0.25) !important;
+    }
+    .mapboxgl-popup-tip { border-top-color: #fff !important; }
+  `;
+  document.head.appendChild(s);
 }
 
-function makeShipEl(color, isSelected) {
-  const el = document.createElement('div');
-  const size = isSelected ? 36 : 30;
-  el.style.cssText = `
-    width:${size}px;height:${size}px;position:relative;cursor:pointer;
-    transition:all 0.2s;will-change:transform;
-    filter:drop-shadow(0 2px 6px rgba(0,0,0,0.4));
+function makeShipEl(color, isSelected, status) {
+  const outer = document.createElement('div');
+  const SIZE = 44;
+  outer.className = 'ship-marker';
+  outer.style.cssText = `width:${SIZE}px;height:${SIZE}px;position:relative;cursor:pointer;`;
+
+  const isDistressed = status === 'distressed' || status === 'stranded';
+  const isWarning    = status === 'rerouting'  || status === 'insufficient_fuel';
+
+  // Ping ring for distressed/warning ships
+  const pingRing = isDistressed || isWarning ? `
+    <div style="
+      position:absolute;inset:0;border-radius:50%;
+      border:2px solid ${color};
+      animation:ship-ping ${isDistressed ? '1s' : '1.6s'} cubic-bezier(0,0,0.2,1) infinite;
+      pointer-events:none;
+    "></div>` : '';
+
+  // Outer glow pulse
+  const glowRing = `
+    <div style="
+      position:absolute;inset:4px;border-radius:50%;
+      background:${color};
+      animation:ship-pulse 2.4s ease-in-out infinite;
+      pointer-events:none;
+    "></div>`;
+
+  // Wake trail (ellipse behind the ship — rotated via parent)
+  const wake = `
+    <div style="
+      position:absolute;left:50%;bottom:-6px;
+      width:10px;height:18px;
+      transform:translateX(-50%);
+      background:radial-gradient(ellipse at top, ${color}55 0%, transparent 70%);
+      animation:ship-wake 1.2s ease-out infinite;
+      pointer-events:none;
+    "></div>`;
+
+  outer.innerHTML = `
+    ${pingRing}
+    ${glowRing}
+    ${wake}
+    <div class="ship-inner" style="
+      position:absolute;inset:0;
+      display:flex;align-items:center;justify-content:center;
+      transition:filter 0.2s;
+    ">
+      <svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <filter id="ship-glow-${color.replace('#','')}" x="-40%" y="-40%" width="180%" height="180%">
+            <feGaussianBlur stdDeviation="2" result="blur"/>
+            <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+          </filter>
+        </defs>
+        <!-- hull -->
+        <polygon points="16,2 22,26 16,22 10,26"
+          fill="${color}" stroke="white" stroke-width="1.6" stroke-linejoin="round"
+          filter="url(#ship-glow-${color.replace('#','')})"/>
+        <!-- superstructure -->
+        <rect x="13" y="12" width="6" height="5" rx="1.5" fill="white" opacity="0.9"/>
+        <!-- bow light -->
+        <circle cx="16" cy="4" r="1.5" fill="white" opacity="0.8"/>
+        ${isSelected ? `<circle cx="16" cy="16" r="14" stroke="${color}" stroke-width="2" fill="none" opacity="0.5"/>` : ''}
+      </svg>
+    </div>
   `;
-  // Outer glow ring + ship body
-  el.innerHTML = `
-    <svg width="${size}" height="${size}" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <!-- glow ring -->
-      <circle cx="18" cy="18" r="16" fill="${color}" opacity="${isSelected ? '0.28' : '0.14'}" />
-      <circle cx="18" cy="18" r="16" stroke="${color}" stroke-width="${isSelected ? '2' : '1.2'}" fill="none" opacity="0.7" />
-      <!-- ship hull: narrow bow at top, wide stern -->
-      <polygon points="18,4 25,28 18,24 11,28" fill="${color}" stroke="white" stroke-width="1.8" stroke-linejoin="round"/>
-      <!-- bridge superstructure -->
-      <rect x="15" y="14" width="6" height="5" rx="1" fill="white" opacity="0.85"/>
-    </svg>
-  `;
-  return el;
+  return outer;
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
@@ -440,10 +519,12 @@ export default function MapBox({ isCommand }) {
 
       if (!ref) {
         // ── First time: spawn marker exactly at server position ───────────────
-        const el = makeShipEl(st.color, isSelected);
+        const el = makeShipEl(st.color, isSelected, ship.status);
         const popup = new mapboxgl.Popup({
-          offset: 22, closeButton: true, closeOnClick: false,
-          className: 'ship-popup', maxWidth: '280px',
+          anchor: 'bottom',
+          offset: [0, -48],
+          closeButton: true, closeOnClick: false,
+          className: 'ship-popup', maxWidth: '290px',
         }).setHTML(popupHtml(ship));
 
         let pinned = false;
@@ -483,15 +564,6 @@ export default function MapBox({ isCommand }) {
         ref.pathQueue = buildQueue(ref.curLng, ref.curLat);
         ref.speed = ship.speed || 0;
         ref._lastShip = ship;
-
-        const svg = ref.el.querySelector('polygon');
-        if (svg) svg.setAttribute('fill', st.color);
-        const circles = ref.el.querySelectorAll('circle');
-        if (circles[0]) circles[0].setAttribute('fill', st.color);
-        if (circles[1]) circles[1].setAttribute('stroke', st.color);
-        ref.el.style.filter = isSelected
-          ? 'drop-shadow(0 0 8px rgba(129,166,198,0.9))'
-          : 'drop-shadow(0 2px 4px rgba(0,0,0,0.35))';
         if (ref.popup.isOpen()) ref.popup.setHTML(popupHtml(ship));
       }
     });
