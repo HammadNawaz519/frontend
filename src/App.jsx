@@ -149,7 +149,7 @@ function CommandApp() {
   const runAdvisor = async () => {
     setAdvisorLoading(true);
     try {
-      const apiKey = import.meta.env.VITE_OPENROUTER_API_KEY;
+      const apiKey = import.meta.env.OPENROUTER_API_KEY;
       if (apiKey) {
         // Run AI completely on the frontend
         const systemPrompt = `You are the Fleet Command AI Advisor.
@@ -171,7 +171,7 @@ Output STRICTLY valid JSON like:
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({
-            model: import.meta.env.VITE_OPENROUTER_MODEL || 'google/gemini-2.0-flash-exp:free',
+            model: import.meta.env.OPENROUTER_MODEL || 'google/gemini-2.0-flash-exp:free',
             messages: [{ role: 'user', content: systemPrompt }]
           })
         });
@@ -194,7 +194,7 @@ Output STRICTLY valid JSON like:
         const data = await r.json();
         setAdvisorData(data);
       }
-    } catch { setAdvisorData({ error: 'Advisor unavailable — check VITE_OPENROUTER_API_KEY or backend connection' }); }
+    } catch { setAdvisorData({ error: 'Advisor unavailable — check OPENROUTER_API_KEY or backend connection' }); }
     setAdvisorLoading(false);
   };
 
