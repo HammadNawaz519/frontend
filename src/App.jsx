@@ -142,7 +142,7 @@ function CommandApp() {
   const runAdvisor = async () => {
     setAdvisorLoading(true);
     try {
-      const apiKey = import.meta.env.OPENROUTER_API_KEY || import.meta.env.VITE_OPENROUTER_API_KEY;
+      const apiKey = import.meta.env.VITE_GROQ_API_KEY;
       if (apiKey) {
         const systemPrompt = `You are the Fleet Command AI Advisor.
 Current fleet state:
@@ -157,7 +157,7 @@ Output STRICTLY valid JSON like:
 
         // Model fallback chain — Groq free tier, tries each until one succeeds
         const MODELS = [
-          import.meta.env.OPENROUTER_MODEL || 'llama-3.3-70b-versatile',
+          import.meta.env.VITE_GROQ_MODEL || 'llama-3.3-70b-versatile',
           'llama-3.1-8b-instant',
           'gemma2-9b-it',
           'mixtral-8x7b-32768',
