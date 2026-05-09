@@ -209,9 +209,9 @@ export default function MapBox({ isCommand }) {
 
       <!-- Stats row -->
       <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:1px;background:#e8f0f5">
-        ${[['⚡ Speed', speedKn + ' kn'], ['🧭 ETA', eta], ['📍 Dist', distKm]].map(([label, val]) =>
+        ${[['Speed', speedKn + ' kn'], ['ETA', eta], ['Distance', distKm]].map(([label, val]) =>
           `<div style="background:#fff;padding:7px 8px;text-align:center">
-            <div style="font-size:9px;color:#8ba8bc;font-weight:700;text-transform:uppercase;margin-bottom:2px">${label}</div>
+            <div style="font-size:9px;color:#8ba8bc;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;margin-bottom:2px">${label}</div>
             <div style="font-size:12px;font-weight:800;color:#1a2b38">${val}</div>
           </div>`).join('')}
       </div>

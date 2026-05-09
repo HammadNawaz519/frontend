@@ -16,7 +16,6 @@ const SHIPS_META = [
 
 // ── Landing Page ──────────────────────────────────────────────────────────────
 function Landing({ onEnter }) {
-
   return (
     <div className="landing">
       <div className="landing__orbs" aria-hidden="true">
@@ -29,44 +28,44 @@ function Landing({ onEnter }) {
       <div className="landing__content">
         <div className="landing__badge reveal">
           <span className="badge-dot" />
-          Fleetwatch Ops
+          Fleetwatch Ops · Live
         </div>
 
         <section className="landing__hero reveal delay-1">
-          <div className="landing__eyebrow">Live Fleet Ops — Strait of Hormuz</div>
+          <div className="landing__eyebrow">Strait of Hormuz · Real-time Fleet Operations</div>
           <h1 className="landing__title">Maritime Command</h1>
           <p className="landing__subtitle">
-            Track 15 ships, route around risk zones, respond to distress in real-time.
+            Track 15 vessels, route around risk zones, and respond to distress signals in real-time.
           </p>
           <div className="landing__stats">
-            <div className="stat-card">
-              <div className="stat-value">15</div>
-              <div className="stat-label">Vessels</div>
-            </div>
-            <div className="stat-card">
-              <div className="stat-value">1Hz</div>
-              <div className="stat-label">Updates</div>
-            </div>
-            <div className="stat-card">
-              <div className="stat-value">AI</div>
-              <div className="stat-label">Distress NLP</div>
-            </div>
-            <div className="stat-card">
-              <div className="stat-value">A*</div>
-              <div className="stat-label">Routing</div>
-            </div>
+            {[
+              { value: '15', label: 'Vessels' },
+              { value: '1 Hz', label: 'Updates' },
+              { value: 'AI', label: 'Distress NLP' },
+              { value: 'A*', label: 'Routing' },
+            ].map(({ value, label }) => (
+              <div key={label} className="stat-card">
+                <div className="stat-value">{value}</div>
+                <div className="stat-label">{label}</div>
+              </div>
+            ))}
           </div>
           <div className="landing__note">Geofencing · Proximity alerts · Weather-aware routing · 1-hr playback</div>
         </section>
 
-        {/* ── Role cards ── */}
         <section className="landing__choices reveal delay-2">
 
           {/* Fleet Command card */}
-          <div className="role-card" style={{ '--accent': '#81A6C6', '--accent-strong': '#6E93B3', '--accent-soft': '#FFFAF0' }}>
-            <div className="role-card__icon">CMD</div>
+          <div className="role-card" style={{ '--accent': '#4F88A8', '--accent-strong': '#3C6F8F', '--accent-soft': '#e8f4fb' }}>
+            <div className="role-card__icon">
+              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#4F88A8" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="10"/>
+                <line x1="2" y1="12" x2="22" y2="12"/>
+                <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
+              </svg>
+            </div>
             <div className="role-card__title">Fleet Command</div>
-            <p className="role-card__desc">Oversee the entire fleet, draw restricted zones, issue directives to any ship.</p>
+            <p className="role-card__desc">Oversee the entire fleet, draw restricted zones, and issue directives to any vessel.</p>
             <ul className="role-card__list">
               {['Live map of all 15 ships', 'Draw & delete restricted zones', 'Issue directives to captains', 'AI fleet advisor', '1-hour playback timeline'].map(f => (
                 <li key={f} className="role-card__item">
@@ -76,37 +75,31 @@ function Landing({ onEnter }) {
               ))}
             </ul>
             <button onClick={() => onEnter('command', null)} className="role-card__button">
-              Enter Command →
+              Enter Command
             </button>
           </div>
 
-          {/* Ship Captain card — redesigned to show ships immediately */}
-          <div className="role-card role-card--captain"
-            style={{ '--accent': '#4F88A8', '--accent-strong': '#3C6F8F', '--accent-soft': '#FFFAF0' }}>
-            <div className="role-card__icon">CPT</div>
-            <div className="role-card__title">Ship Captain</div>
-            <p className="role-card__desc">Your ship view. Receive directives from Command and send distress signals.</p>
-            
-            <div style={{marginTop: 20, marginBottom: 10, fontSize: 13, fontWeight: 800, color: '#3C6F8F', textTransform: 'uppercase', letterSpacing: '0.05em'}}>
-              Select Vessel to Board:
+          {/* Ship Captain card */}
+          <div className="role-card" style={{ '--accent': '#2e7d6e', '--accent-strong': '#256358', '--accent-soft': '#e8f6f3' }}>
+            <div className="role-card__icon">
+              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#2e7d6e" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="10"/>
+                <polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"/>
+              </svg>
             </div>
-            
-            <div style={{display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8}}>
-              {SHIPS_META.map(s => (
-                <button
-                  key={s.id}
-                  onClick={() => onEnter('captain', s.id)}
-                  style={{
-                    padding: '8px 4px', background: '#EEF4F8', border: '1px solid #AACDDC', 
-                    borderRadius: 6, cursor: 'pointer', textAlign: 'center', transition: 'all 0.2s'
-                  }}
-                  onMouseOver={(e) => { e.currentTarget.style.background = '#3C6F8F'; e.currentTarget.style.color = '#fff'; }}
-                  onMouseOut={(e) => { e.currentTarget.style.background = '#EEF4F8'; e.currentTarget.style.color = 'inherit'; }}
-                >
-                  <div style={{fontSize: 10, fontWeight: 800, opacity: 0.7, marginBottom: 2}}>{s.id}</div>
-                  <div style={{fontSize: 12, fontWeight: 700}}>{s.name}</div>
-                </button>
-              ))}
+            <div className="role-card__title">Ship Captain</div>
+            <p className="role-card__desc">Your ship view. Receive directives from Command and submit distress signals.</p>
+
+            <div className="vessel-dropdown--open">
+              <div className="vessel-dropdown__label">Select a vessel to board</div>
+              <div className="vessel-dropdown__grid">
+                {SHIPS_META.map(s => (
+                  <button key={s.id} onClick={() => onEnter('captain', s.id)} className="vessel-btn">
+                    <span className="vessel-btn__name">{s.name}</span>
+                    <span className="vessel-btn__id">{s.id}</span>
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
 
