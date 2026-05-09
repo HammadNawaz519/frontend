@@ -102,8 +102,9 @@ export const useStore = create((set, get) => ({
   playbackIndex: 0,
   isAutoPlaying: false,
   playbackSpeed: 2,   // frames per second
-  routeOptions: null,      // { ship_id, destination, routes: [...] } | null
-  previewRouteId: null,    // id of the route being highlighted on the map
+  routeOptions: null,
+  previewRouteId: null,
+  navigablePolygon: null,   // [[lat,lng],...] water boundary for waypoint filtering
 
   // Actions
   setRole: (role, captainShipId = null) => set({ role, captainShipId }),
@@ -192,6 +193,7 @@ export const useStore = create((set, get) => ({
           alerts: data.alerts || [],
           weatherZones: data.weather_zones || [],
           tick: data.tick || 0,
+          navigablePolygon: data.navigable_polygon || get().navigablePolygon,
         });
       } catch (e) {
         // ignore network errors, socket listeners remain primary

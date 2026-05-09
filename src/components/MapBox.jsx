@@ -171,7 +171,22 @@ export default function MapBox({ isCommand }) {
   const createZone = useStore(s => s.createZone);
   const routeOptions = useStore(s => s.routeOptions);
   const previewRouteId = useStore(s => s.previewRouteId);
+  const navigablePolygon = useStore(s => s.navigablePolygon);
   const routeOptAdded = useRef(false);
+
+  // Ray-cast point-in-polygon. polygon = [[lat,lng],...]
+  const inWater = useCallback((lat, lng) => {
+    const poly = navigablePolygon;
+    if (!poly || poly.length < 3) return true; // no polygon = assume water
+    let inside = false;
+    for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+      const [yi, xi] = poly[i];
+      const [yj, xj] = poly[j];
+      if (((xi > lng) !== (xj > lng)) && (lat < (yj - yi) * (lng - xi) / (xj - xi) + yi))
+        inside = !inside;
+    }
+    return inside;
+  }, [navigablePolygon]);
 
   const popupHtml = useCallback((ship) => {
     const st = getStatus(ship.status);
@@ -442,21 +457,19 @@ export default function MapBox({ isCommand }) {
       features: ships
         .filter(s => s.route_path && s.route_path.length >= 2)
         .map(s => {
-          // route_path is [[lat,lng],...] — drop leading waypoints that are within
-          // 0.08° of the ship's actual position (these are just the A* snap point).
-          // This prevents a visible gap/jog between the ship marker and the route line.
+          // Convert [lat,lng] → [lng,lat] and filter out of nav polygon
+          let pts = s.route_path
+            .map(([la, ln]) => [ln, la])
+            .filter(([wLng, wLat]) => inWater(wLat, wLng) && (!navigablePolygon || pointInPolygon([wLng, wLat], navigablePolygon)));
+          
           const shipLat = s.lat, shipLng = s.lng;
           let pathStart = 0;
-          while (pathStart < s.route_path.length - 1) {
-            const [wLat, wLng] = s.route_path[pathStart];
-            if (Math.abs(wLat - shipLat) < 0.08 && Math.abs(wLng - shipLng) < 0.08) {
-              pathStart++;
-            } else break;
+          while (pathStart < pts.length - 1) {
+            const [wLng, wLat] = pts[pathStart];
+            if (Math.abs(wLng - shipLng) < 0.08 && Math.abs(wLat - shipLat) < 0.08) pathStart++;
+            else break;
           }
-          const coords = [
-            [shipLng, shipLat],   // exact ship position — line starts HERE
-            ...s.route_path.slice(pathStart).map(([la, ln]) => [ln, la]),
-          ];
+          const coords = [[shipLng, shipLat], ...pts.slice(pathStart)];
           return {
             type: 'Feature',
             properties: { id: s.id, color: getStatus(s.status).color },
@@ -464,7 +477,7 @@ export default function MapBox({ isCommand }) {
           };
         }),
     });
-  }, [ships]);
+  }, [ships, inWater, navigablePolygon]);
 
   // ── Update candidate route options overlay ─────────────────────────────────
   useEffect(() => {
@@ -494,18 +507,18 @@ export default function MapBox({ isCommand }) {
       const isSelected = ship.id === selectedShipId;
       const ref = ships$.current[ship.id];
 
-      // Build a path queue from route_path: [[lat,lng],...] → [[lng,lat],...]
-      // Drop waypoints that are already behind the ship (within reach threshold)
+      // Build a path queue [[lng,lat],...], filtering to water-only waypoints
       const buildQueue = (curLng, curLat) => {
         if (!ship.route_path || ship.route_path.length === 0) return [[ship.lng, ship.lat]];
-        const all = ship.route_path.map(([la, ln]) => [ln, la]);
-        // find first waypoint we haven't reached yet
+        let all = ship.route_path
+          .map(([la, ln]) => [ln, la])
+          .filter(([wLng, wLat]) => inWater(wLat, wLng) && (!navigablePolygon || pointInPolygon([wLng, wLat], navigablePolygon)));
+        if (all.length === 0) all = [[ship.lng, ship.lat]];
         let start = 0;
         while (start < all.length - 1) {
           const [wLng, wLat] = all[start];
-          if (Math.abs(wLng - curLng) < WAYPOINT_REACH_DEG && Math.abs(wLat - curLat) < WAYPOINT_REACH_DEG) {
-            start++;
-          } else break;
+          if (Math.abs(wLng - curLng) < WAYPOINT_REACH_DEG && Math.abs(wLat - curLat) < WAYPOINT_REACH_DEG) start++;
+          else break;
         }
         return all.slice(start);
       };
@@ -529,13 +542,33 @@ export default function MapBox({ isCommand }) {
         const spawnLat = firstWp ? firstWp[0] : ship.lat;
 
         let pinned = false;
-        el.addEventListener('mouseenter', () => {
+        let hideTimer = null;
+
+        const showPopup = () => {
+          clearTimeout(hideTimer);
           const curRef = ships$.current[ship.id];
           popup.setHTML(popupHtml((curRef && curRef._lastShip) || ship));
           popup.setLngLat([curRef ? curRef.curLng : ship.lng, curRef ? curRef.curLat : ship.lat]);
           if (!popup.isOpen()) popup.addTo(map.current);
+        };
+
+        const hidePopup = () => {
+          clearTimeout(hideTimer);
+          if (!pinned) hideTimer = setTimeout(() => popup.remove(), 120);
+        };
+
+        el.addEventListener('mouseenter', showPopup);
+        el.addEventListener('mouseleave', hidePopup);
+
+        // Keep popup open when mouse is over the popup itself
+        popup.on('open', () => {
+          const pe = popup.getElement();
+          if (pe) {
+            pe.addEventListener('mouseenter', () => clearTimeout(hideTimer));
+            pe.addEventListener('mouseleave', hidePopup);
+          }
         });
-        el.addEventListener('mouseleave', () => { if (!pinned) popup.remove(); });
+
         el.addEventListener('click', e => {
           e.stopPropagation();
           setSelectedShipId(ship.id);
