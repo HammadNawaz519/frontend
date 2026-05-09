@@ -17,6 +17,35 @@ const MAX_DEG_S = MAX_KM_S / KM_PER_DEG;
 // How many degrees apart two coords must be to count as "reached"
 const WAYPOINT_REACH_DEG = 0.003;  // ~330 m — tight enough to stay on-path
 
+// Navigable water polygon for the Strait of Hormuz region [lat, lng]
+// Source: fleet.json — used to filter route waypoints so ships stay on water
+const NAVIGABLE_POLYGON = [
+  [29.70,48.55],[29.40,49.50],[28.90,50.30],[28.50,50.90],[28.00,51.50],
+  [27.50,52.20],[27.10,52.90],[26.85,53.60],[26.80,54.20],[26.80,54.90],
+  [26.85,55.60],[26.90,56.00],[27.00,56.50],[27.10,57.00],[26.80,57.60],
+  [26.30,58.10],[25.80,58.60],[25.30,59.10],[24.50,59.60],[23.50,59.90],
+  [22.50,60.00],[22.00,60.00],[22.20,58.80],[23.00,58.30],[23.70,58.00],
+  [24.40,57.60],[24.90,57.20],[25.30,56.90],[25.70,56.80],[26.10,56.80],
+  [26.50,56.75],[26.75,56.50],[26.80,56.10],[26.65,55.80],[26.40,55.50],
+  [26.10,55.20],[25.80,55.00],[25.65,54.70],[25.55,54.20],[25.50,53.60],
+  [25.60,53.00],[25.80,52.40],[26.10,51.90],[26.40,51.50],[26.60,51.00],
+  [26.70,50.50],[26.80,50.10],[27.10,49.70],[27.60,49.30],[28.20,49.00],
+  [28.80,48.80],[29.30,48.60],[29.70,48.55],
+];
+
+// Ray-cast point-in-polygon test against the navigable water area
+function onWater(lat, lng) {
+  const poly = NAVIGABLE_POLYGON;
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const [yi, xi] = poly[i];
+    const [yj, xj] = poly[j];
+    if (((xi > lng) !== (xj > lng)) && (lat < (yj - yi) * (lng - xi) / (xj - xi) + yi))
+      inside = !inside;
+  }
+  return inside;
+}
+
 // ── Status → color ────────────────────────────────────────────────────────────
 const STATUS = {
   normal: { color: '#2e7d6e', label: 'Normal' },
@@ -171,22 +200,7 @@ export default function MapBox({ isCommand }) {
   const createZone = useStore(s => s.createZone);
   const routeOptions = useStore(s => s.routeOptions);
   const previewRouteId = useStore(s => s.previewRouteId);
-  const navigablePolygon = useStore(s => s.navigablePolygon);
   const routeOptAdded = useRef(false);
-
-  // Ray-cast point-in-polygon. polygon = [[lat,lng],...]
-  const inWater = useCallback((lat, lng) => {
-    const poly = navigablePolygon;
-    if (!poly || poly.length < 3) return true; // no polygon = assume water
-    let inside = false;
-    for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
-      const [yi, xi] = poly[i];
-      const [yj, xj] = poly[j];
-      if (((xi > lng) !== (xj > lng)) && (lat < (yj - yi) * (lng - xi) / (xj - xi) + yi))
-        inside = !inside;
-    }
-    return inside;
-  }, [navigablePolygon]);
 
   const popupHtml = useCallback((ship) => {
     const st = getStatus(ship.status);
@@ -460,7 +474,7 @@ export default function MapBox({ isCommand }) {
           // Convert [lat,lng] → [lng,lat] and filter out of nav polygon
           let pts = s.route_path
             .map(([la, ln]) => [ln, la])
-            .filter(([wLng, wLat]) => inWater(wLat, wLng) && (!navigablePolygon || pointInPolygon([wLng, wLat], navigablePolygon)));
+            .filter(([wLng, wLat]) => onWater(wLat, wLng));
           
           const shipLat = s.lat, shipLng = s.lng;
           let pathStart = 0;
@@ -477,7 +491,7 @@ export default function MapBox({ isCommand }) {
           };
         }),
     });
-  }, [ships, inWater, navigablePolygon]);
+  }, [ships]);
 
   // ── Update candidate route options overlay ─────────────────────────────────
   useEffect(() => {
@@ -512,7 +526,7 @@ export default function MapBox({ isCommand }) {
         if (!ship.route_path || ship.route_path.length === 0) return [[ship.lng, ship.lat]];
         let all = ship.route_path
           .map(([la, ln]) => [ln, la])
-          .filter(([wLng, wLat]) => inWater(wLat, wLng) && (!navigablePolygon || pointInPolygon([wLng, wLat], navigablePolygon)));
+          .filter(([wLng, wLat]) => onWater(wLat, wLng));
         if (all.length === 0) all = [[ship.lng, ship.lat]];
         let start = 0;
         while (start < all.length - 1) {
@@ -536,10 +550,10 @@ export default function MapBox({ isCommand }) {
           className: 'ship-popup', maxWidth: '260px',
         }).setHTML(popupHtml(ship));
 
-        // Spawn ship at first water waypoint if available, else server position
-        const firstWp = ship.route_path?.[0];
-        const spawnLng = firstWp ? firstWp[1] : ship.lng;
-        const spawnLat = firstWp ? firstWp[0] : ship.lat;
+        // Spawn ship at first WATER waypoint from route_path, fallback to server pos
+        const firstWaterWp = ship.route_path?.find(([la, ln]) => onWater(la, ln));
+        const spawnLng = firstWaterWp ? firstWaterWp[1] : ship.lng;
+        const spawnLat = firstWaterWp ? firstWaterWp[0] : ship.lat;
 
         let pinned = false;
         let hideTimer = null;
