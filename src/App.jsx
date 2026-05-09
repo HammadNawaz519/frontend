@@ -425,6 +425,18 @@ export default function App() {
     initSocket();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Update tab title based on active view
+  useEffect(() => {
+    if (!session) {
+      document.title = 'Maritime Command — Fleetwatch';
+    } else if (session.role === 'command') {
+      document.title = 'Fleet Command — Maritime Ops';
+    } else {
+      const ship = SHIPS_META.find(s => s.id === session.captainShipId);
+      document.title = ship ? `Capt. ${ship.name} (${ship.id}) — Maritime Ops` : 'Captain View — Maritime Ops';
+    }
+  }, [session]);
+
   if (!session) {
     return (
       <Landing
