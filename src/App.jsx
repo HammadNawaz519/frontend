@@ -155,25 +155,21 @@ Analyze this state and provide exactly 3 strategic, actionable recommendations f
 Output STRICTLY valid JSON like:
 { "recommendations": [ { "title": "...", "description": "...", "priority": "high|medium|low" } ] }`;
 
-        // Model fallback chain — tries each in order until one succeeds
+        // Model fallback chain — Groq free tier, tries each until one succeeds
         const MODELS = [
-          import.meta.env.OPENROUTER_MODEL || 'google/gemini-2.0-flash-exp:free',
-          'deepseek/deepseek-chat:free',
-          'qwen/qwen-2.5-72b-instruct:free',
-          'google/gemini-2.5-pro-exp-03-25:free',
-          'meta-llama/llama-3.2-3b-instruct:free',
-          'microsoft/phi-3-mini-128k-instruct:free',
+          import.meta.env.OPENROUTER_MODEL || 'llama-3.3-70b-versatile',
+          'llama-3.1-8b-instant',
+          'gemma2-9b-it',
+          'mixtral-8x7b-32768',
         ];
 
         let lastErr = null;
         for (const model of MODELS) {
           try {
-            const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+            const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
               method: 'POST',
               headers: {
                 'Authorization': `Bearer ${apiKey}`,
-                'HTTP-Referer': window.location.href,
-                'X-Title': 'Maritime Command System',
                 'Content-Type': 'application/json',
               },
               body: JSON.stringify({ model, messages: [{ role: 'user', content: systemPrompt }] }),
@@ -181,7 +177,7 @@ Output STRICTLY valid JSON like:
 
             if (res.status === 429) {
               lastErr = `${model} rate limited`;
-              await new Promise(r => setTimeout(r, 1200)); // wait before next model
+              await new Promise(r => setTimeout(r, 1200));
               continue;
             }
             if (!res.ok) { lastErr = `${model} returned ${res.status}`; continue; }
@@ -191,7 +187,7 @@ Output STRICTLY valid JSON like:
             if (!m) { lastErr = `${model} gave unparseable response`; continue; }
             setAdvisorData(JSON.parse(m[0]));
             setAdvisorLoading(false);
-            return; // success — exit
+            return;
           } catch (e) { lastErr = e.message; }
         }
         throw new Error(lastErr || 'All models unavailable');
