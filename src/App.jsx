@@ -158,8 +158,9 @@ Output STRICTLY valid JSON like:
         // Model fallback chain — tries each in order until one succeeds
         const MODELS = [
           import.meta.env.OPENROUTER_MODEL || 'google/gemini-2.0-flash-exp:free',
-          'meta-llama/llama-3.1-8b-instruct:free',
-          'mistralai/mistral-7b-instruct:free',
+          'deepseek/deepseek-chat:free',
+          'qwen/qwen-2.5-72b-instruct:free',
+          'meta-llama/llama-3.2-3b-instruct:free',
         ];
 
         let lastErr = null;
